@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-import os
+import re
+from datetime import datetime, timedelta
 
 class IMECA_Convertion:
     def __init__ (self, data_path):
@@ -10,6 +11,19 @@ class IMECA_Convertion:
         # Select only the compunds needed and all NaN values will set to zero
         self.data = data[data['id_parameter'].isin(['O3','NO2','CO','SO2','PM10','PM2.5'])].fillna(0)
         self.n = data.shape[0]       
+
+    def completeDate_Hour(self):
+        # Regex for date format
+        print('Parse Date Process Started')
+        regex = re.compile('\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}')
+        for i in range(self.n):
+            #print(regex.match(self.data['date'].iloc[i]))
+            if regex.match(self.data['date'].iloc[i]) == None:
+                old_date = datetime.strptime(str(self.data['date'].iloc[i-1]), '%d/%m/%Y %H:%M')
+                new_date = old_date + timedelta(hours = 1)
+                self.data['date'].iloc[i] = new_date
+
+        print('Parse Date Process Completed')
 
     def unit_conversion(self):
         print('Unit Conversion Process Started')
@@ -60,35 +74,23 @@ class IMECA_Convertion:
 
         print('IMECA Calculation Process Completed')
     
-    def saveFile (self):
-        name = './../Datos/CalidadAire/ConvertedData/' + self.data_path.split('/')[-1].replace('.CSV', '') + '_IMECA.csv'
+    def saveFile (self, route):
+        name = route + '/ConvertedData/' + self.data_path.split('/')[-1].replace('.CSV', '') + '_IMECA.csv'
+        # order values by compound
+        self.data = self.data.sort_values(by = 'id_parameter', ascending = True)
         self.data.to_csv(name, index = False, encoding = 'utf-8')
         print(f'File exported at {self.data_path}')
     
+#define export route
+#export_path = './../Datos/CalidadAire/ConvertedData/'
+route = 'C:/Users/diego/OneDrive - Instituto Politecnico Nacional/ESCOM/TrabajoTerminal/Datos/CalidadAire'
 # Repeat the process for each document from 2020 to 2023
-for year in range(2010, 2023 + 1):
-    path = f'./../Datos/CalidadAire/contaminantes_{year}.CSV'
+for year in range(2010, 2010 + 1): #23
+    path = route + f'/contaminantes_{year}.CSV'
     IMECA = IMECA_Convertion(path)
-    IMECA.unit_conversion()
-    IMECA.IMECA_conversion()
-    IMECA.saveFile()
-# import datetime
+    IMECA.completeDate_Hour()
+    # IMECA.unit_conversion()
+    # IMECA.IMECA_conversion()
+    IMECA.saveFile(route)
 
-# # Definir la fecha de inicio y la fecha de fin
-# fecha_inicio = datetime.datetime(2010, 1, 1)
-# fecha_fin = datetime.datetime(2010, 12, 31)
-
-# # Crear una lista para almacenar las fechas
-# fechas_texto = []
-
-# # Iterar a través de las fechas desde la fecha de inicio hasta la fecha de fin
-# while fecha_inicio <= fecha_fin:
-#     fecha_texto = fecha_inicio.strftime('%d-%m-%Y %H')
-#     for _ in range(26):
-#         fechas_texto.append(fecha_texto)
-    
-#     # Agregar una hora a la fecha actual
-#     fecha_inicio += datetime.timedelta(hours=1)
-# print(fechas_texto)
-# print(len(fechas_texto)*5)
 
