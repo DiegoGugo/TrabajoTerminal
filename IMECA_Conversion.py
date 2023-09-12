@@ -3,7 +3,7 @@ import pandas as pd
 import re
 from datetime import datetime, timedelta
 
-class IMECA_Convertion:
+class IMECA_Conversion:
     def __init__ (self, data_path):
         # read data
         self.data_path = data_path
@@ -96,7 +96,7 @@ route = './../Datos/CalidadAire'
 # Repeat the process for each document from 2020 to 2023
 for year in range(2010, 2023 + 1):
     path = route + f'/contaminantes_{year}.CSV'
-    IMECA = IMECA_Convertion(path)
+    IMECA = IMECA_Conversion(path)
     IMECA.completeDates()
     IMECA.unit_conversion()
     IMECA.IMECA_conversion()
