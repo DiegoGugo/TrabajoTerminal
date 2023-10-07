@@ -1,0 +1,266 @@
+import numpy as np
+import pandas as pd
+import re
+from datetime import datetime, timedelta
+
+monitor_areas = [
+                    "AJM", "AJU", "ARA", "AZC", "CAM", "CCA", "CES", "COR", "COY", "CUA", "DIC", "EAJ", "EDL",
+                    "GAM", "HGM", "IBM", "IMP", "IZT", "LAA", "LAG", "LOM", "LVI" "MCM", "MER", "MGH", "MPA",
+                    "PED", "PLA", "SAC", "SFE", "SHA", "SJA", "SNT", "SUR", "TAC", "TAX", "TAH", "TEC", "TPN",
+                    "UAX", "UIZ", "UNM", "VAL"
+                    ]
+
+compounds = ['O3','NO2','CO','SO2','PM10','PM2.5']
+smooth_compounds = ['O3_smth','NO2_smth','CO_smth','SO2_smth','PM10_smth','PM2.5_smth']
+
+class Data_Structure:
+          
+    def __init__ (self, data_path, year):
+        # read data
+        self.data_path = data_path
+        data = pd.read_csv(self.data_path, header = 10, encoding = 'utf_8')
+        # Select only the compunds needed and all NaN values will set to zero
+        data = data[data['id_parameter'].isin(compounds)]
+        # Selecto only the monitor_areas in CDMX
+        self.data = data[data['id_station'].isin(monitor_areas)].fillna(0)
+        self.n = self.data.shape[0]       
+
+        self.year = year
+        self.dates = self.compute_dates()
+        self.structured_data = pd.DataFrame()
+
+    def compute_dates(self):
+        # Definir la fecha de inicio y la fecha de finalización
+        first_date = datetime(self.year, 1, 1, 1)
+        last_date = datetime(self.year + 1, 1, 1, 0)
+
+        # Utilizar una comprensión de lista para generar las fechas
+        dates = [first_date + timedelta(hours=i) for i in range((last_date - first_date).days * 24 + (last_date - first_date).seconds // 3600 + 1)]
+
+        return dates
+
+    def completeDates(self):
+        # Regex for date format
+        print('Date Format Correction Process Started')
+        regex_date = re.compile('\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}')
+        regex_hour = re.compile('24:00')
+        dates = self.data['date'].values
+        for i in range(self.n):
+            if regex_date.match(dates[i]) == None:
+                old_date = datetime.strptime(dates[i-1], '%d/%m/%Y %H:%M')
+                new_date = old_date + timedelta(hours = 1)                            
+                dates[i] = new_date.strftime("%d/%m/%Y %H:%M")
+            
+            if regex_hour.search(dates[i]) != None:
+                dates[i] = str(dates[i]).replace('24:00','00:00')
+
+        # Converting dates in object datetime
+        self.data['date'] = pd.to_datetime(dates) 
+
+        print('Date Format Correction Process Completed')
+
+    def unit_conversion(self):
+        print('Unit Conversion Process Started')
+        
+        def convert_units(row):
+            if row['id_parameter'] in ['O3', 'NO2', 'CO', 'SO2'] and row['unit'] != 15:
+                row['value'] /= 1000
+                row['unit'] = 15
+            return row
+        
+        self.data = self.data.apply(convert_units, axis=1)
+    
+    print('Unit Conversion Process Completed')
+
+    def sort_by_date(self, data):
+        # Rellena la lista de registros para mantener el orden
+        sorted_data = []
+
+        for date in self.dates:
+            find_flag = False
+            for element in data:
+                if date == element[0]: #date
+                    sorted_data.append(element[1]) #value
+                    find_flag = True
+                    break
+            if find_flag is False:
+                sorted_data.append(0)  # Rellena con 0 si no se encontró un registro
+
+        return sorted_data
+
+    def structure_data(self):       
+        print('Create Data Structure Process Started') 
+        # The first column will be the date
+        self.structured_data['date'] = self.dates
+        n_dates = len(self.dates)
+        #structured_data['date'] = compute_dates(year)
+        
+        for compound in compounds:
+            #Find all the stations that measure a specific compound and calculate the promedy of each hour
+            aux_df = self.data[self.data['id_parameter'] == compound].sort_values(by = 'date', ascending = True)
+            mean_scaled_data = aux_df.groupby(by = 'date').agg({'value':'mean'}).reset_index()
+            mean_scaled_data.columns = ['date', 'value_mean']
+            mean_scaled_data['value_mean'] = mean_scaled_data['value_mean'].round(2)
+            
+            if len(mean_scaled_data) < n_dates:
+                self.structured_data[compound] = self.sort_by_date(mean_scaled_data.values)
+            else:
+                self.structured_data[compound] = mean_scaled_data['value_mean'].iloc[:n_dates].values
+
+        print('Create Data Structure Process Finished') 
+
+        return self.structured_data
+    
+    def save_file (self, route):
+        name = route + '/ConvertedData/' + self.data_path.split('/')[-1].replace('.CSV', '') + '_IMECA.csv'
+        self.structured_data.to_csv(name, index = False, encoding = 'utf-8')
+        print(f'File exported at {self.data_path}')
+
+class Scale_Data():
+
+    def __init__(self, data):
+        self.data = data
+    
+    def mobile_average (self, column, window):
+        data = self.data[column].values
+        new_data = np.zeros(len(data))
+        
+        #minimum data needed 75% 
+        min_n = window * 0.75
+        for i in range(window -1, len(data)):
+            values = data[i-(window-1):i]
+            exception = np.count_nonzero(values == 0)
+            if (window - exception) < min_n:
+                new_data[i] = data[i]
+            else:
+                new_data[i] = np.round(np.sum(values)/window, 3)
+            
+        return new_data
+
+
+    def promedio_ponderado(self, column):
+        data = self.data[column].values
+        new_data = np.zeros(len(data))
+
+        for i in range(12, len(data)):
+            data_part = data[i-12:i-1]
+            data_part = data[::-1]
+
+            # De las 3 mediciones más recientes, al menos contar con 2
+            first_exception = np.count_nonzero(data_part == 0.0)
+            if first_exception > 0:
+                new_data[i] = data[i]
+            else:
+                min_val = np.min(data_part)
+                max_val = np.max(data_part)
+                w = 1 - ((max_val - min_val) / max_val)
+                W = np.where(w > 0.5, w, 0.5)
+
+                weights = W**np.arange(12)
+                C_bar = np.sum(data_part * weights) / np.sum(weights)
+                new_data[i] = np.round(C_bar, 3)
+        
+        return new_data
+    
+    def smooth_series(self):
+        print('Smooth Series Process Started')
+        
+        for compound, smooth_compound in zip(compounds, smooth_compounds):
+            window = 8 if compound in ['O3', 'CO'] else 24 if compound == 'NO2' else None 
+            
+            if window:
+                self.data[smooth_compound] = self.mobile_average(compound, window)
+            if window is None: #NO_2
+                self.data[smooth_compound] = self.data[compound]
+            elif compound in ['PM10', 'PM2.5']:
+                self.data[smooth_compound] = self.promedio_ponderado(compound) 
+            
+        print('Smooth Series Process Finished')
+
+    def IMECA_conversion(self):
+        print('IMECA Calculation Process Started')
+        
+        def generateIMECA(column):
+            match column.name:
+                case 'O3': #Ozono
+                    return round(column * (100/0.11), 2)
+                case 'NO2': #Dioxido de nitrogeno
+                    return round(column * (100/0.21), 2)
+                case 'CO': #Monoxido de carbono
+                    return round(column * (100/11), 2)
+                case 'SO2': #Dioxido de azufre
+                    return round(column * (100/0.13), 2)
+                case 'PM10': 
+                    if column >= 0 and column <= 120:
+                        return round(column * (5/6), 2)
+                    elif column >= 121 and column <= 320:
+                        return round(40 + (column * 0.5), 2)
+                    elif column > 320:
+                        return round(column * (5/8), 2)
+                case 'PM2.5':
+                    if column >= 0 and column <= 15.4:
+                        return round(column * (50/15.4), 2)
+                    elif column >= 15.5 and column <= 40.4:
+                        return round(20.5 + (column * (49/24.9)), 2)
+                    elif column >= 40.5 and column <= 65.4:
+                        return round(21.3 + (column * (49/24.9)), 2)
+                    elif column >= 65.5 and column <= 150.4:
+                        return round(113.2 + (column * (49/84.9)), 2)
+                    elif column > 150.4:
+                        return round(column * (201/150.5), 2)
+        
+            self.data[smooth_compounds] = self.data[compounds].apply(generateIMECA, axis = 0)
+
+        print('IMECA Calculation Process Completed')
+
+    def find_max(self):
+        print('Labeling Process Started')
+        def max_value(row, column_subset):
+            max_value = row[column_subset].max()
+            max_column_name = row[column_subset].idxmax()
+            label = ''
+            if max_value <= 50:
+                label = 'BUENA'
+            elif max_value > 50 and max_value <=100:
+                label = 'ACEPTABLE'
+            elif max_value > 100 and max_value <=150:
+                label = 'MALA'
+            elif max_value > 150 and max_value <=200:
+                label = 'MUY MALA'
+            elif max_value > 200:
+                label = 'EXTREMADAMENTE MALA'
+
+            return [max_value, max_column_name, label]
+        
+        res = self.data[smooth_compounds].apply(max_value, args = (smooth_compounds,), axis = 1)
+        self.data[['MAX_Comp', 'Max_Value', 'IMECA_label']] = pd.DataFrame(res.tolist(), index = self.data.index)
+        print('Labeling Process Finished')
+
+    def save_file (self):
+        self.data.to_csv('Contaminantes_2010_2023.csv', index = False, encoding = 'utf-8')
+        print(f'File exported')
+
+
+#define export route
+route = './../DatosTT/CalidadAire'
+
+#General DF
+all_data = pd.DataFrame()
+# Repeat the process for each document from 2020 to 2023
+for year in range(2010, 2023 + 1):
+    print(f'-------------------{year}-------------------')
+    path = route + f'/contaminantes_{year}.CSV'
+    struct = Data_Structure(path, year)
+    struct.completeDates()
+    struct.unit_conversion()
+    df = struct.structure_data()
+    all_data = pd.concat([all_data, df], ignore_index=True)
+    struct.save_file(route)
+
+# Transform all the data
+transform = Scale_Data(all_data)
+transform.smooth_series()
+transform.IMECA_conversion()
+transform.find_max()
+transform.save_file()
+    
