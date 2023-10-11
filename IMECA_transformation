@@ -12,6 +12,7 @@ monitor_areas = [
 
 compounds = ['O3','NO2','CO','SO2','PM10','PM2.5']
 smooth_compounds = ['O3_smth','NO2_smth','CO_smth','SO2_smth','PM10_smth','PM2.5_smth']
+IMECA_compounds = ['O3_IMECA','NO2_IMECA','CO_IMECA','SO2_IMECA','PM10_IMECA','PM2.5_IMECA']
 
 class Data_Structure:
           
@@ -166,55 +167,67 @@ class Scale_Data():
         print('Smooth Series Process Started')
         
         for compound, smooth_compound in zip(compounds, smooth_compounds):
-            window = 8 if compound in ['O3', 'CO'] else 24 if compound == 'NO2' else None 
+            window = None
+            if compound in ['O3', 'CO']:
+                window = 8
+            elif compound == 'SO2':
+                window = 24
             
-            if window:
+            if window is None: #NO2
+                self.data[smooth_compound] = self.data[compound].values
+            elif window:
                 self.data[smooth_compound] = self.mobile_average(compound, window)
-            if window is None: #NO_2
-                self.data[smooth_compound] = self.data[compound]
             elif compound in ['PM10', 'PM2.5']:
                 self.data[smooth_compound] = self.promedio_ponderado(compound) 
             
-        print('Smooth Series Process Finished')
+        print('Smooth Series Process Completed')
 
     def IMECA_conversion(self):
         print('IMECA Calculation Process Started')
         
         def generateIMECA(column):
+            new_values = np.zeros(len(column.values))
             match column.name:
-                case 'O3': #Ozono
-                    return round(column * (100/0.11), 2)
-                case 'NO2': #Dioxido de nitrogeno
-                    return round(column * (100/0.21), 2)
-                case 'CO': #Monoxido de carbono
-                    return round(column * (100/11), 2)
-                case 'SO2': #Dioxido de azufre
-                    return round(column * (100/0.13), 2)
-                case 'PM10': 
-                    if column >= 0 and column <= 120:
-                        return round(column * (5/6), 2)
-                    elif column >= 121 and column <= 320:
-                        return round(40 + (column * 0.5), 2)
-                    elif column > 320:
-                        return round(column * (5/8), 2)
-                case 'PM2.5':
-                    if column >= 0 and column <= 15.4:
-                        return round(column * (50/15.4), 2)
-                    elif column >= 15.5 and column <= 40.4:
-                        return round(20.5 + (column * (49/24.9)), 2)
-                    elif column >= 40.5 and column <= 65.4:
-                        return round(21.3 + (column * (49/24.9)), 2)
-                    elif column >= 65.5 and column <= 150.4:
-                        return round(113.2 + (column * (49/84.9)), 2)
-                    elif column > 150.4:
-                        return round(column * (201/150.5), 2)
+                case 'O3_smth': #Ozono
+                    return [round(value * (100/0.11), 2) for value in column.values]
+                case 'NO2_smth': #Dioxido de nitrogeno
+                    return [round(value * (100/0.21), 2) for value in column.values]
+                case 'CO_smth': #Monoxido de carbono
+                    return [round(value * (100/11), 2) for value in column.values]
+                case 'SO2_smth': #Dioxido de azufre
+                    return [round(value * (100/0.13), 2) for value in column.values]
+                case 'PM10_smth': 
+                    for i, value in enumerate(column.values):
+                        if value >= 0 and value <= 120:
+                            new_values[i] = round(value * (5/6), 2)
+                        elif value >= 121 and value <= 320:
+                             new_values[i] = round(40 + (value * 0.5), 2)
+                        elif value > 320:
+                             new_values[i] = round(value * (5/8), 2)
+                    
+                    return new_values
+                case 'PM2.5_smth':
+                    for i, value in enumerate(column.values):
+                        if value >= 0 and value <= 15.4:
+                            new_values[i] = round(value * (50/15.4), 2)
+                        elif value >= 15.5 and value <= 40.4:
+                            new_values[i] = round(20.5 + (value * (49/24.9)), 2)
+                        elif value >= 40.5 and value <= 65.4:
+                            new_values[i] = round(21.3 + (value * (49/24.9)), 2)
+                        elif value >= 65.5 and value <= 150.4:
+                            new_values[i] = round(113.2 + (value * (49/84.9)), 2)
+                        elif value > 150.4:
+                            new_values[i] = round(value * (201/150.5), 2)
+
+                        return new_values
         
-            self.data[smooth_compounds] = self.data[compounds].apply(generateIMECA, axis = 0)
+        self.data[IMECA_compounds] = self.data[smooth_compounds].apply(generateIMECA, axis = 0)
 
         print('IMECA Calculation Process Completed')
 
     def find_max(self):
         print('Labeling Process Started')
+
         def max_value(row, column_subset):
             max_value = row[column_subset].max()
             max_column_name = row[column_subset].idxmax()
@@ -230,37 +243,45 @@ class Scale_Data():
             elif max_value > 200:
                 label = 'EXTREMADAMENTE MALA'
 
-            return [max_value, max_column_name, label]
+            return [max_column_name, max_value, label]
         
         res = self.data[smooth_compounds].apply(max_value, args = (smooth_compounds,), axis = 1)
-        self.data[['MAX_Comp', 'Max_Value', 'IMECA_label']] = pd.DataFrame(res.tolist(), index = self.data.index)
+        # res = self.data[IMECA_compounds].apply(max_value, args = (IMECA_compounds,), axis = 1)
+        self.data[['MAX_Compound', 'Max_Value', 'IMECA_label']] = pd.DataFrame(res.tolist(), index = self.data.index)
         print('Labeling Process Finished')
 
     def save_file (self):
-        self.data.to_csv('Contaminantes_2010_2023.csv', index = False, encoding = 'utf-8')
+        self.data.to_csv('Contaminantes_2010_2023_prep.csv', index = False, encoding = 'utf-8')
         print(f'File exported')
 
 
-#define export route
-route = './../DatosTT/CalidadAire'
+# #define export route
+# route = './../DatosTT/CalidadAire'
 
-#General DF
-all_data = pd.DataFrame()
-# Repeat the process for each document from 2020 to 2023
-for year in range(2010, 2023 + 1):
-    print(f'-------------------{year}-------------------')
-    path = route + f'/contaminantes_{year}.CSV'
-    struct = Data_Structure(path, year)
-    struct.completeDates()
-    struct.unit_conversion()
-    df = struct.structure_data()
-    all_data = pd.concat([all_data, df], ignore_index=True)
-    struct.save_file(route)
+# #General DF
+# all_data = pd.DataFrame()
+# # Repeat the process for each document from 2020 to 2023
+# for year in range(2010, 2023 + 1):
+#     print(f'-------------------{year}-------------------')
+#     path = route + f'/contaminantes_{year}.CSV'
+#     struct = Data_Structure(path, year)
+#     struct.completeDates()
+#     struct.unit_conversion()
+#     df = struct.structure_data()
+#     all_data = pd.concat([all_data, df], ignore_index=True)
+#     struct.save_file(route)
+
+# all_data.to_csv('Contaminantes_2010_2023_raw.csv', index = False, encoding = 'utf-8')
 
 # Transform all the data
+
+all_data = pd.read_csv('Contaminantes_2010_2023_raw.csv', encoding = 'utf-8')
+
 transform = Scale_Data(all_data)
 transform.smooth_series()
 transform.IMECA_conversion()
 transform.find_max()
 transform.save_file()
+
+
     
