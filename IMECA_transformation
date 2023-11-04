@@ -144,12 +144,12 @@ class Scale_Data():
         new_data = np.zeros(len(data))
 
         for i in range(12, len(data)):
-            data_part = data[i-12:i-1]
-            data_part = data[::-1]
+            data_part = data[i-12:i]
+            data_part = data_part[::-1]
 
             # De las 3 mediciones más recientes, al menos contar con 2
-            first_exception = np.count_nonzero(data_part == 0.0)
-            if first_exception > 0:
+            exception = np.count_nonzero(data_part[:3])
+            if exception < 2:
                 new_data[i] = data[i]
             else:
                 min_val = np.min(data_part)
@@ -165,7 +165,6 @@ class Scale_Data():
     
     def smooth_series(self):
         print('Smooth Series Process Started')
-        
         for compound, smooth_compound in zip(compounds, smooth_compounds):
             window = None
             if compound in ['O3', 'CO']:
@@ -173,12 +172,12 @@ class Scale_Data():
             elif compound == 'SO2':
                 window = 24
             
-            if window is None: #NO2
-                self.data[smooth_compound] = self.data[compound].values
-            elif window:
+            if window == 8 or window == 24:
                 self.data[smooth_compound] = self.mobile_average(compound, window)
             elif compound in ['PM10', 'PM2.5']:
                 self.data[smooth_compound] = self.promedio_ponderado(compound) 
+            elif window is None: #NO2
+                self.data[smooth_compound] = self.data[compound].values
             
         print('Smooth Series Process Completed')
 
