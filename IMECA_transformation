@@ -218,7 +218,7 @@ class Scale_Data():
                         elif value > 150.4:
                             new_values[i] = round(value * (201/150.5), 2)
 
-                        return new_values
+                    return new_values
         
         self.data[IMECA_compounds] = self.data[smooth_compounds].apply(generateIMECA, axis = 0)
 
