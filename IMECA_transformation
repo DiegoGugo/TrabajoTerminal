@@ -244,7 +244,7 @@ class Scale_Data():
 
             return [max_column_name, max_value, label]
         
-        res = self.data[smooth_compounds].apply(max_value, args = (smooth_compounds,), axis = 1)
+        res = self.data[IMECA_compounds].apply(max_value, args = (IMECA_compounds,), axis = 1)
         # res = self.data[IMECA_compounds].apply(max_value, args = (IMECA_compounds,), axis = 1)
         self.data[['MAX_Compound', 'Max_Value', 'IMECA_label']] = pd.DataFrame(res.tolist(), index = self.data.index)
         print('Labeling Process Finished')
