@@ -45,7 +45,11 @@ class ContingenciaAmbiental:
                 self.FaseII[i] = 1 
     
     def CrearEstructura(self):
-        fases_data = pd.DataFrame({'Fase I':self.FaseI,
+
+        date = pd.date_range(start='2010-01-01', end='2023-12-31', freq='D')
+
+        fases_data = pd.DataFrame({'Fecha':date,
+                                   'Fase I':self.FaseI,
                                    'Fase II':self.FaseII,
                                    'Fase Combinada':self.FaseCombinada
                                    })
